@@ -56,6 +56,9 @@ namespace DataAccess
                 case Provider.Oracle:
                     iDataAccess = new OracleDataAccess();
                     break;
+                case Provider.MySql:
+                    iDataAccess = new MySqlDataAccess(ConnString);
+                    break;
             }
             return iDataAccess;
         }

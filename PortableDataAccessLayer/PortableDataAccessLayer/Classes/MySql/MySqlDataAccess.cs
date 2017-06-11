@@ -6,7 +6,7 @@ using System.Data.Common;
 
 namespace DataAccess
 {
-    internal class MySqlDataAccess
+    internal class MySqlDataAccess : IDataAccess
     {
         #region Declaration(s)
         private string connectionString = string.Empty;
