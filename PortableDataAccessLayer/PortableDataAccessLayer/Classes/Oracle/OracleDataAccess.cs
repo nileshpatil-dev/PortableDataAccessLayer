@@ -1,5 +1,4 @@
-﻿using DataAccess.Entity;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -84,22 +83,7 @@ namespace DataAccess
             throw new NotImplementedException();
         }
 
-        public DataTable GetDataSetUsingAdapter(EntityMetadata entityMetadata)
-        {
-            throw new NotImplementedException();
-        }
-
-        public DataSet GetDataSetUsingAdapter(List<EntityMetadata> entitiesMetadata)
-        {
-            throw new NotImplementedException();
-
-        }
-
-        public int ExecuteDataSetUsingAdapter(List<EntityMetadata> entities, DataSet dataSet)
-        {
-            throw new NotImplementedException();
-        }
-
+        
         public bool SqlBulkCopy(DataTable dataTable, string targetTable)
         {
             throw new NotImplementedException();

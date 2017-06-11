@@ -1,6 +1,5 @@
 ﻿
 
-using DataAccess.Entity;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -161,29 +160,7 @@ namespace DataAccess
         /// <param name="dalParameterList">Parameter List to be associated with the Command or Stored Procedure.</param>
         /// <returns>Result in the form of DataSet</returns>
         DataSet GetDataSet(string commandText, CommandType commandType, DalParameterList dalParameterList, string[] tableNames = null);
-
-        /// <summary>
-        /// Get relational table data.
-        /// </summary>
-        /// <param name="entityMetadata">entity to get master table details.</param>
-        /// <returns>Returns data table.</returns>
-        DataTable GetDataSetUsingAdapter(EntityMetadata entityMetadata);
-
-        /// <summary>
-        /// Get multiple relational tables data.
-        /// </summary>
-        /// <param name="entitiesMetadata">List of entities to get master table details.</param>
-        /// <returns>Returns set of data tables.</returns>
-        DataSet GetDataSetUsingAdapter(List<EntityMetadata> entitiesMetadata);
-
-        /// <summary>
-        /// Update new, updated and deleted records from data set into the database.
-        /// </summary>
-        /// <param name="entities">List of entities to get master table details.</param>
-        /// <param name="dataSet">Data set to hold update data.</param>
-        /// <returns>Returns number of rows successfully updated from the data set.</returns>
-        int ExecuteDataSetUsingAdapter(List<EntityMetadata> entities, DataSet dataSet);
-
+        
         /// <summary>
         /// Set the batch size to process data batch-wise.
         /// </summary>

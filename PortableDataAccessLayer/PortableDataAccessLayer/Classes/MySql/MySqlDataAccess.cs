@@ -1,19 +1,18 @@
-﻿using System;
-using System.Data;
-using System.Data.SqlClient;
-using System.Data.Common;
+﻿using MySql.Data.MySqlClient;
+using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
 
 namespace DataAccess
 {
-
-    internal class SqlDataAccess : IDataAccess
+    internal class MySqlDataAccess
     {
         #region Declaration(s)
         private string connectionString = string.Empty;
         private const int commandTimeout = 0;
-        private SqlConnection connection;
-        private SqlTransaction transaction;
+        private MySqlConnection connection;
+        private MySqlTransaction transaction;
         #endregion
 
         #region Properties
@@ -21,9 +20,9 @@ namespace DataAccess
         #endregion
 
         #region Constructor
-        public SqlDataAccess() { }
+        public MySqlDataAccess() { }
 
-        public SqlDataAccess(string connectionString)
+        public MySqlDataAccess(string connectionString)
         {
             this.connectionString = connectionString;
         }
@@ -44,7 +43,7 @@ namespace DataAccess
         public object GetScalar(string commandText, CommandType commandType, DalParameterList dalParameterList)
         {
             IsValidCommandText(commandText);
-            SqlCommand SqlCommand = null;
+            MySqlCommand SqlCommand = null;
             int OutputParametersCount = 0; // count Output parameters sent to stored procedure
 
             try
@@ -66,13 +65,13 @@ namespace DataAccess
                         foreach (DalParameter DalParam in dalParameterList)
                         {
 
-                            SqlParameter SqlParam = new SqlParameter()
+                            MySqlParameter SqlParam = new MySqlParameter()
                             {
                                 ParameterName = DalParam.ParameterName,
                                 DbType = DalParam.ParameterType,
                                 Size = DalParam.ParameterSize,
                                 Direction = DalParam.ParameterDirection,
-                                SqlValue = DalParam.ParameterValue
+                                Value = DalParam.ParameterValue
                             };
                             if (DalParam.ParameterDirection == ParameterDirection.Output)
                             {
@@ -94,7 +93,7 @@ namespace DataAccess
                     // handle output parameters
                     if (OutputParametersCount > 0)
                     {
-                        foreach (SqlParameter SqlParam in SqlCommand.Parameters)
+                        foreach (MySqlParameter SqlParam in SqlCommand.Parameters)
                         {
                             if (SqlParam.Direction == ParameterDirection.Output)
                             {
@@ -108,7 +107,7 @@ namespace DataAccess
                     return ReturnValue;
                 }
             }
-            catch (SqlException SqlEx)
+            catch (MySqlException SqlEx)
             {
                 throw SqlEx.GetBaseException();
             }
@@ -145,11 +144,126 @@ namespace DataAccess
         public int ExecuteNonQuery(string commandText, CommandType commandType, DalParameterList dalParameterList)
         {
             IsValidCommandText(commandText);
-            int recordsAffected = -1;
-            SqlCommand sqlCommand = null;
+            int RecordsAffected = -1;
+            MySqlCommand SqlCommand = null;
 
             int OutputParametersCount = 0; // count Output parameters sent to stored procedure
             bool HasTransactionBegan = false;
+
+            try
+            {
+                // get new sql command
+                SqlCommand = GetSqlCommand(commandText);
+
+                using (SqlCommand)
+                {
+                    // prepare procedure
+                    SqlCommand.CommandType = commandType;
+                    SqlCommand.CommandTimeout = commandTimeout;
+
+                    // add sql parameters to procedure
+                    if (dalParameterList != null)
+                    {
+                        foreach (DalParameter DalParam in dalParameterList)
+                        {
+
+
+                            MySqlParameter SqlParam = new MySqlParameter()
+                            {
+                                ParameterName = DalParam.ParameterName,
+                                DbType = DalParam.ParameterType,
+                                Direction = DalParam.ParameterDirection,
+                                Value = DalParam.ParameterValue
+                            };
+
+
+                            if (DalParam.ParameterDirection == ParameterDirection.Output)
+                            {
+                                OutputParametersCount++;
+                                if (DalParam.ParameterSize > 0)
+                                {
+                                    SqlParam.Size = DalParam.ParameterSize;
+                                }
+                            }
+
+                            SqlCommand.Parameters.Add(SqlParam);
+                        }
+                    }
+
+                    // take care of transaction business
+
+                    SqlCommand.Connection.Open();
+                    if (commandType != CommandType.StoredProcedure)
+                    {
+                        SqlCommand.Transaction = SqlCommand.Connection.BeginTransaction();
+                        HasTransactionBegan = true;
+                    }
+
+                    // executes procedure to insert/update/delete data
+                    RecordsAffected = SqlCommand.ExecuteNonQuery();
+
+                    if (commandType != CommandType.StoredProcedure)
+                        SqlCommand.Transaction.Commit();
+
+                    // handle output parameters
+                    if (OutputParametersCount > 0)
+                    {
+                        foreach (MySqlParameter SqlParam in SqlCommand.Parameters)
+                        {
+                            if (SqlParam.Direction == ParameterDirection.Output)
+                            {
+                                dalParameterList.Find((x) => x.ParameterName == SqlParam.ParameterName
+                                                    && x.ParameterDirection == ParameterDirection.Output)
+                                                    .ParameterValue = SqlParam.Value;
+                            }
+                        }
+                    }
+                }//using SureScoreCommand
+            }
+            catch (MySqlException SqlEx) { throw SqlEx.GetBaseException(); }
+            catch (Exception ex) { throw ex.GetBaseException(); }
+            finally
+            {
+                if (commandType != CommandType.StoredProcedure)
+                {
+                    if (SqlCommand != null && SqlCommand.Transaction != null && HasTransactionBegan)
+                        SqlCommand.Transaction.Rollback();
+                }
+
+                if (SqlCommand.Connection.State != ConnectionState.Closed)
+                    SqlCommand.Connection.Close();
+
+                if (SqlCommand != null)
+                    SqlCommand.Dispose();
+
+                if (connection != null)
+                    connection.Dispose();
+            }
+
+            return RecordsAffected;
+        }
+        #endregion
+
+        #region GetDataReader
+        public DbDataReader GetDataReader(string commandText)
+        {
+            return GetDataReader(commandText, CommandType.Text, (DalParameterList)null);
+        }
+
+        public DbDataReader GetDataReader(string commandText, CommandType commandType)
+        {
+            return GetDataReader(commandText, commandType, (DalParameterList)null);
+        }
+
+
+        public DbDataReader GetDataReader(string commandText, CommandType commandType, DalParameterList dalParameterList)
+        {
+            IsValidCommandText(commandText);
+            DbDataReader dbDataReader = null;
+
+            MySqlCommand sqlCommand = null;
+
+            int OutputParametersCount = 0; // count Output parameters sent to stored procedure
 
             try
             {
@@ -167,137 +281,25 @@ namespace DataAccess
                     {
                         foreach (DalParameter DalParam in dalParameterList)
                         {
-                            SqlParameter sqlParam = new SqlParameter()
+
+                            MySqlParameter SqlParam = new MySqlParameter()
                             {
                                 ParameterName = DalParam.ParameterName,
                                 DbType = DalParam.ParameterType,
                                 Direction = DalParam.ParameterDirection,
-                                SqlValue = DalParam.ParameterValue
+                                Value = DalParam.ParameterValue
                             };
-
 
                             if (DalParam.ParameterDirection == ParameterDirection.Output)
                             {
                                 OutputParametersCount++;
                                 if (DalParam.ParameterSize > 0)
                                 {
-                                    sqlParam.Size = DalParam.ParameterSize;
+                                    SqlParam.Size = DalParam.ParameterSize;
                                 }
                             }
 
-                            sqlCommand.Parameters.Add(sqlParam);
-                        }
-                    }
-
-                    // take care of transaction business
-
-                    sqlCommand.Connection.Open();
-                    if (commandType != CommandType.StoredProcedure)
-                    {
-                        sqlCommand.Transaction = sqlCommand.Connection.BeginTransaction();
-                        HasTransactionBegan = true;
-                    }
-
-                    // executes procedure to insert/update/delete data
-                    recordsAffected = sqlCommand.ExecuteNonQuery();
-
-                    if (commandType != CommandType.StoredProcedure)
-                        sqlCommand.Transaction.Commit();
-
-                    // handle output parameters
-                    if (OutputParametersCount > 0)
-                    {
-                        foreach (SqlParameter SqlParam in sqlCommand.Parameters)
-                        {
-                            if (SqlParam.Direction == ParameterDirection.Output)
-                            {
-                                dalParameterList.Find((x) => x.ParameterName == SqlParam.ParameterName
-                                                    && x.ParameterDirection == ParameterDirection.Output)
-                                                    .ParameterValue = SqlParam.Value;
-                            }
-                        }
-                    }
-                }//using SureScoreCommand
-            }
-            catch (SqlException SqlEx) { throw SqlEx.GetBaseException(); }
-            catch (Exception ex) { throw ex.GetBaseException(); }
-            finally
-            {
-                if (commandType != CommandType.StoredProcedure)
-                {
-                    if (sqlCommand != null && sqlCommand.Transaction != null && HasTransactionBegan)
-                        sqlCommand.Transaction.Rollback();
-                }
-
-                if (sqlCommand.Connection.State != ConnectionState.Closed)
-                    sqlCommand.Connection.Close();
-
-                if (sqlCommand != null)
-                    sqlCommand.Dispose();
-
-                if (connection != null)
-                    connection.Dispose();
-            }
-
-            return recordsAffected;
-        }
-        #endregion
-
-        #region GetDataReader
-        public DbDataReader GetDataReader(string commandText)
-        {
-            return GetDataReader(commandText, CommandType.Text, (DalParameterList)null);
-        }
-
-        public DbDataReader GetDataReader(string commandText, CommandType commandType)
-        {
-            return GetDataReader(commandText, commandType, (DalParameterList)null);
-        }
-
-        public DbDataReader GetDataReader(string commandText, CommandType commandType, DalParameterList dalParameterList)
-        {
-            IsValidCommandText(commandText);
-            DbDataReader dbDataReader = null;
-
-            SqlCommand sqlCommand = null;
-
-            int outputParametersCount = 0; // count Output parameters sent to stored procedure
-
-            try
-            {
-                // get new sql command
-                sqlCommand = GetSqlCommand(commandText);
-
-                using (sqlCommand)
-                {
-                    // prepare procedure
-                    sqlCommand.CommandType = commandType;
-                    sqlCommand.CommandTimeout = commandTimeout;
-
-                    // add sql parameters to procedure
-                    if (dalParameterList != null)
-                    {
-                        foreach (DalParameter dalParam in dalParameterList)
-                        {
-
-                            SqlParameter sqlParam = new SqlParameter()
-                            {
-                                ParameterName = dalParam.ParameterName,
-                                DbType = dalParam.ParameterType,
-                                Direction = dalParam.ParameterDirection,
-                                SqlValue = dalParam.ParameterValue
-                            };
-
-                            if (dalParam.ParameterDirection == ParameterDirection.Output)
-                            {
-                                outputParametersCount++;
-                                if (dalParam.ParameterSize > 0)
-                                {
-                                    sqlParam.Size = dalParam.ParameterSize;
-                                }
-                            }
-
-                            sqlCommand.Parameters.Add(sqlParam);
+                            sqlCommand.Parameters.Add(SqlParam);
                         }
                     }
 
@@ -310,9 +312,9 @@ namespace DataAccess
                     dbDataReader = sqlCommand.ExecuteReader(CommandBehavior.CloseConnection);
 
                     // handle output parameters
-                    if (outputParametersCount > 0)
+                    if (OutputParametersCount > 0)
                     {
-                        foreach (SqlParameter SqlParam in sqlCommand.Parameters)
+                        foreach (MySqlParameter SqlParam in sqlCommand.Parameters)
                         {
                             if (SqlParam.Direction == ParameterDirection.Output)
                             {
@@ -324,7 +326,7 @@ namespace DataAccess
                     }
                 }//using SureScoreCommand
             }
-            catch (SqlException SqlEx) { throw SqlEx.GetBaseException(); }
+            catch (MySqlException SqlEx) { throw SqlEx.GetBaseException(); }
             catch (Exception ex) { throw ex.GetBaseException(); }
             finally
             {
@@ -357,20 +359,20 @@ namespace DataAccess
         public DataTable GetDataTable(string commandText, CommandType commandType, DalParameterList dalParameterList, string TableName = null)
         {
             IsValidCommandText(commandText);
-            DataSet TempDataSet = new DataSet();
-            SqlDataAdapter SqlDataAdapter = null;
+            DataSet tempDataSet = new DataSet();
+            MySqlDataAdapter sqlDataAdapter = null;
             int OutputParametersCount = 0; // count Output parameters sent to stored procedure
             try
             {
 
                 // get new sql data adapter
-                SqlDataAdapter = GetSqlDataAdapter(commandText);
+                sqlDataAdapter = GetSqlDataAdapter(commandText);
 
-                using (SqlDataAdapter)
+                using (sqlDataAdapter)
                 {
                     // prepare procedure
-                    SqlDataAdapter.SelectCommand.CommandType = commandType;
-                    SqlDataAdapter.SelectCommand.CommandTimeout = commandTimeout;
+                    sqlDataAdapter.SelectCommand.CommandType = commandType;
+                    sqlDataAdapter.SelectCommand.CommandTimeout = commandTimeout;
 
 
                     // add sql parameters to procedure
@@ -379,13 +381,13 @@ namespace DataAccess
                         foreach (DalParameter DalParam in dalParameterList)
                         {
 
-                            SqlParameter SqlParam = new SqlParameter()
+                            MySqlParameter SqlParam = new MySqlParameter()
                             {
                                 ParameterName = DalParam.ParameterName,
                                 DbType = DalParam.ParameterType,
                                 Size = DalParam.ParameterSize,
                                 Direction = DalParam.ParameterDirection,
-                                SqlValue = DalParam.ParameterValue
+                                Value = DalParam.ParameterValue
                             };
 
                             if (DalParam.ParameterDirection == ParameterDirection.Output)
@@ -397,24 +399,24 @@ namespace DataAccess
                                 }
                             }
 
-                            SqlDataAdapter.SelectCommand.Parameters.Add(SqlParam);
+                            sqlDataAdapter.SelectCommand.Parameters.Add(SqlParam);
                         }
                     }
 
                     // retrieve data into datasets from stored procedure
-                    SqlDataAdapter.Fill(TempDataSet);
+                    sqlDataAdapter.Fill(tempDataSet);
 
 
                     // handle output parameters
                     if (OutputParametersCount > 0)
                     {
-                        foreach (SqlParameter SqlParam in SqlDataAdapter.SelectCommand.Parameters)
+                        foreach (MySqlParameter sqlParam in sqlDataAdapter.SelectCommand.Parameters)
                         {
-                            if (SqlParam.Direction == ParameterDirection.Output)
+                            if (sqlParam.Direction == ParameterDirection.Output)
                             {
-                                dalParameterList.Find((x) => x.ParameterName == SqlParam.ParameterName
+                                dalParameterList.Find((x) => x.ParameterName == sqlParam.ParameterName
                                                     && x.ParameterDirection == ParameterDirection.Output)
-                                                    .ParameterValue = SqlParam.Value;
+                                                    .ParameterValue = sqlParam.Value;
                             }
                         }
                     }//if(iOutputParametersCount > 0)
@@ -423,9 +425,9 @@ namespace DataAccess
 
                 DataTable ReturnValue = null;
 
-                if (TempDataSet != null && TempDataSet.Tables.Count > 0)
+                if (tempDataSet != null && tempDataSet.Tables.Count > 0)
                 {
-                    ReturnValue = TempDataSet.Tables[0];
+                    ReturnValue = tempDataSet.Tables[0];
                     if (TableName != null && TableName.Trim() != "")
                     {
                         ReturnValue.TableName = TableName;
@@ -434,7 +436,7 @@ namespace DataAccess
 
                 return ReturnValue;
             }
-            catch (SqlException SqlEx)
+            catch (MySqlException SqlEx)
             {
                 throw SqlEx.GetBaseException();
             }
@@ -444,8 +446,8 @@ namespace DataAccess
             }
             finally
             {
-                if (SqlDataAdapter != null)
-                    SqlDataAdapter.Dispose();
+                if (sqlDataAdapter != null)
+                    sqlDataAdapter.Dispose();
 
                 if (connection != null)
                     connection.Dispose();
@@ -468,20 +470,20 @@ namespace DataAccess
         public DataSet GetDataSet(string commandText, CommandType commandType, DalParameterList dalParameterList, string[] TableNames = null)
         {
             IsValidCommandText(commandText);
-            DataSet TempDataSet = new DataSet();
-            SqlDataAdapter SqlDataAdapter = null;
+            DataSet tempDataSet = new DataSet();
+            MySqlDataAdapter sqlDataAdapter = null;
             int OutputParametersCount = 0; // count Output parameters sent to stored procedure
             try
             {
 
                 // get new sql data adapter
-                SqlDataAdapter = GetSqlDataAdapter(commandText);
+                sqlDataAdapter = GetSqlDataAdapter(commandText);
 
-                using (SqlDataAdapter)
+                using (sqlDataAdapter)
                 {
                     // prepare procedure
-                    SqlDataAdapter.SelectCommand.CommandType = commandType;
-                    SqlDataAdapter.SelectCommand.CommandTimeout = commandTimeout;
+                    sqlDataAdapter.SelectCommand.CommandType = commandType;
+                    sqlDataAdapter.SelectCommand.CommandTimeout = commandTimeout;
 
                     // add sql parameters to procedure
                     if (dalParameterList != null)
@@ -489,13 +491,13 @@ namespace DataAccess
                         foreach (DalParameter DalParam in dalParameterList)
                         {
 
-                            SqlParameter SqlParam = new SqlParameter()
+                            MySqlParameter sqlParam = new MySqlParameter()
                             {
                                 ParameterName = DalParam.ParameterName,
                                 DbType = DalParam.ParameterType,
                                 Size = DalParam.ParameterSize,
                                 Direction = DalParam.ParameterDirection,
-                                SqlValue = DalParam.ParameterValue
+                                Value = DalParam.ParameterValue
                             };
 
                             if (DalParam.ParameterDirection == ParameterDirection.Output)
@@ -503,27 +505,27 @@ namespace DataAccess
                                 OutputParametersCount++;
                                 if (DalParam.ParameterSize > 0)
                                 {
-                                    SqlParam.Size = DalParam.ParameterSize;
+                                    sqlParam.Size = DalParam.ParameterSize;
                                 }
                             }
-                            SqlDataAdapter.SelectCommand.Parameters.Add(SqlParam);
+                            sqlDataAdapter.SelectCommand.Parameters.Add(sqlParam);
                         }
                     }
 
                     // retrieve data into datasets from stored procedure
-                    SqlDataAdapter.Fill(TempDataSet);
+                    sqlDataAdapter.Fill(tempDataSet);
 
 
                     // handle output parameters
                     if (OutputParametersCount > 0)
                     {
-                        foreach (SqlParameter SqlParam in SqlDataAdapter.SelectCommand.Parameters)
+                        foreach (MySqlParameter sqlParam in sqlDataAdapter.SelectCommand.Parameters)
                         {
-                            if (SqlParam.Direction == ParameterDirection.Output)
+                            if (sqlParam.Direction == ParameterDirection.Output)
                             {
-                                dalParameterList.Find((x) => x.ParameterName == SqlParam.ParameterName
+                                dalParameterList.Find((x) => x.ParameterName == sqlParam.ParameterName
                                                     && x.ParameterDirection == ParameterDirection.Output)
-                                                    .ParameterValue = SqlParam.Value;
+                                                    .ParameterValue = sqlParam.Value;
                             }
                         }
                     }//if(iOutputParametersCount > 0)
@@ -532,11 +534,11 @@ namespace DataAccess
 
 
 
-                if (TempDataSet != null && TempDataSet.Tables.Count > 0)
+                if (tempDataSet != null && tempDataSet.Tables.Count > 0)
                 {
                     int counter = 0;
                     int tableNamesCount = TableNames != null ? TableNames.Length : 0;
-                    foreach (DataTable table in TempDataSet.Tables)
+                    foreach (DataTable table in tempDataSet.Tables)
                     {
                         if (counter < tableNamesCount)
                         {
@@ -547,9 +549,9 @@ namespace DataAccess
 
                 }
 
-                return TempDataSet;
+                return tempDataSet;
             }
-            catch (SqlException SqlEx)
+            catch (MySqlException SqlEx)
             {
                 throw SqlEx.GetBaseException();
             }
@@ -559,8 +561,8 @@ namespace DataAccess
             }
             finally
             {
-                if (SqlDataAdapter != null)
-                    SqlDataAdapter.Dispose();
+                if (sqlDataAdapter != null)
+                    sqlDataAdapter.Dispose();
 
                 if (connection != null)
                     connection.Dispose();
@@ -572,86 +574,45 @@ namespace DataAccess
         #region BulkCopy
         public bool SqlBulkCopy(DataTable dataTable, string targetTable)
         {
-            bool isSuccess = false;
-            try
-            {
-                OpenConnection();
-                // Create the SqlBulkCopy object. 
-                // Note that the column positions in the source DataTable 
-                // match the column positions in the destination table so 
-                // there is no need to map columns. 
-                using (SqlBulkCopy bulkCopy = new SqlBulkCopy(connection))
-                {
-                    bulkCopy.DestinationTableName = targetTable;
-                    try
-                    {
-                        // Write from the source to the destination.
-                        if (BatchSize > 0)
-                        {
-                            bulkCopy.BatchSize = BatchSize;
-                        }
-
-                        bulkCopy.WriteToServer(dataTable);
-                        isSuccess = true;
-                    }
-                    catch (SqlException SqlEx)
-                    {
-                        throw SqlEx.GetBaseException();
-                    }
-                    catch (Exception ex)
-                    {
-                        throw ex.GetBaseException();
-                    }
-                }
-                CloseConnection();
-            }
-            catch (SqlException SqlEx)
-            {
-                throw SqlEx.GetBaseException();
-            }
-            catch (Exception ex)
-            {
-                throw ex.GetBaseException();
-            }
-            return isSuccess;
+            return false;
         }
         #endregion 
 
         #endregion
 
         #region Function(s)
-        private SqlDataAdapter GetSqlDataAdapter(string commandText = "")
+        private MySqlDataAdapter GetSqlDataAdapter(string commandText = "")
         {
             if (!IsConnectionStringValid())
                 throw new Exception("Connection string not set correctly!");
 
             if (this.connection == null)
-                this.connection = new SqlConnection(this.connectionString);
+                this.connection = new MySqlConnection(this.connectionString);
             else
             {
                 this.connection.Dispose();
                 this.connection = null;
-                this.connection = new SqlConnection(this.connectionString);
+                this.connection = new MySqlConnection(this.connectionString);
             }
 
-            return new SqlDataAdapter(commandText, this.connection);
+            return new MySqlDataAdapter(commandText, this.connection);
         }
 
-        private SqlCommand GetSqlCommand(string commandText = "")
+        private MySqlCommand GetSqlCommand(string commandText = "")
         {
             if (!IsConnectionStringValid())
                 throw new Exception("Connection string not set correctly!");
 
             if (this.connection == null)
-                this.connection = new SqlConnection(this.connectionString);
+                this.connection = new MySqlConnection(this.connectionString);
             else
             {
                 this.connection.Dispose();
                 this.connection = null;
-                this.connection = new SqlConnection(this.connectionString);
+                this.connection = new MySqlConnection(this.connectionString);
             }
 
-            return new SqlCommand(commandText, this.connection);
+            return new MySqlCommand(commandText, this.connection);
         }
 
         private void IsValidCommandText(string commandText)
@@ -679,13 +640,13 @@ namespace DataAccess
                         connection.State != ConnectionState.Fetching &&
                         connection.State != ConnectionState.Open)
                     {
-                        connection = new SqlConnection(connectionString);
+                        connection = new MySqlConnection(connectionString);
                         connection.Open();
                     }
                 }
                 else
                 {
-                    connection = new SqlConnection(connectionString);
+                    connection = new MySqlConnection(connectionString);
                     connection.Open();
                 }
             }

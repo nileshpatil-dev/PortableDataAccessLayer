@@ -19,7 +19,7 @@ namespace DataAccess
         /// Gets or sets the type of the parameter.
         /// </summary>
         /// <value>The type of the parameter.</value>
-        public SqlDbType ParameterType { get; set; }
+        public DbType ParameterType { get; set; }
 
         /// <summary>
         /// Gets or sets the parameter direction.
@@ -54,7 +54,7 @@ namespace DataAccess
         /// <param name="parameterType">Type of the _ parameter.</param>
         /// <param name="parameterDirection">The _ parameter direction.</param>
         /// <param name="parameterValue">The _ parameter value.</param>
-        public DalParameter(string parameterName, SqlDbType parameterType, ParameterDirection parameterDirection = ParameterDirection.Input, object parameterValue = null)
+        public DalParameter(string parameterName, DbType parameterType, ParameterDirection parameterDirection = ParameterDirection.Input, object parameterValue = null)
         {
             this.ParameterName = parameterName;
             this.ParameterType = parameterType;
